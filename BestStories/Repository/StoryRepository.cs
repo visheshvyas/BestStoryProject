@@ -13,6 +13,7 @@ namespace BestStories.Repository
         public StoryRepository(IHttpClientFactory httpClientFactory)
         {
             _httpClientFactory = httpClientFactory;
+            Console.WriteLine($"***** Starting Service *****");
             Console.WriteLine($"Started loading Story data :: {DateTime.Now.ToString()}");
 
             string storyids_url = Helper.ConfigurationManager.AppSetting["StoryIdsUrl"];
@@ -31,42 +32,64 @@ namespace BestStories.Repository
             //Fetching all the stories based on the Ids available
             if (storyIds.Length > 0)
             {
-                Parallel.ForEach(storyIds, storyId =>
-                {
-                    string story_url = Helper.ConfigurationManager.AppSetting["StoryUrl"].Replace("{story_id}", storyId.ToString());
-
-                    //using (var client = new HttpClient())
-                    //{
-                    var client = _httpClientFactory.CreateClient();
-                    using (var s = client.GetStringAsync(story_url))
+                bool loadingCompleted = false;
+                
+                Task.Factory.StartNew(() => {
+                    while (!loadingCompleted)
                     {
-                        RawData rawData = JsonSerializer.Deserialize<RawData>(s.Result)!;
-                        if (rawData != null)
+                        Console.Write(".");
+                        Thread.Sleep(2000);
+                    }
+                });
+
+                try
+                {
+                    Parallel.ForEach(storyIds, storyId =>
+                    {
+                        string story_url = Helper.ConfigurationManager.AppSetting["StoryUrl"].Replace("{story_id}", storyId.ToString());
+
+                        //using (var client = new HttpClient())
+                        //{
+                        var client = _httpClientFactory.CreateClient();
+                        using (var s = client.GetStringAsync(story_url))
                         {
-                            //we will only consider type == STORY here
-                            if (rawData.type.ToUpper() == "STORY")
+                            RawData rawData = JsonSerializer.Deserialize<RawData>(s.Result)!;
+                            if (rawData != null)
                             {
-                                BestStory bestStory = new BestStory()
+                                //we will only consider type == STORY here
+                                if (rawData.type.ToUpper() == "STORY")
                                 {
-                                    title = rawData.title,
-                                    uri = rawData.url,
-                                    postedBy = rawData.by,
-                                    time = DateTimeOffset.FromUnixTimeSeconds(rawData.time).UtcDateTime,
-                                    score = rawData.score,
-                                    commentCount = GetCommentCount(rawData.kids),
-                                };
-                                bagStories.Add(bestStory);
+                                    BestStory bestStory = new BestStory()
+                                    {
+                                        title = rawData.title,
+                                        uri = rawData.url,
+                                        postedBy = rawData.by,
+                                        time = DateTimeOffset.FromUnixTimeSeconds(rawData.time).UtcDateTime,
+                                        score = rawData.score,
+                                        commentCount = GetCommentCount(rawData.kids),
+                                    };
+                                    bagStories.Add(bestStory);
+                                }
                             }
                         }
-                    }
-                    //}
-                });
+                        //}
+                    });
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine(ex.Message);
+                }
+                finally
+                {
+                    loadingCompleted = true;
+                }
             }
 
             //finally getting the Stories ready with the sorting based on score
             lstStories = bagStories.OrderByDescending(x => x.score).ToList();
 
-            Console.WriteLine($"Finished loading Story data :: {DateTime.Now.ToString()}");
+            Console.WriteLine($"\nFinished loading Story data :: {DateTime.Now.ToString()}");
+            Console.WriteLine($"***** Service Started *****");
         }
 
         private int GetCommentCount(int[] kids)
